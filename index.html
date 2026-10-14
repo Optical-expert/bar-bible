@@ -1,0 +1,76 @@
+<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Bar Bible">
+<meta name="theme-color" content="#1b1b24">
+<title>Bar Bible</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font:17px -apple-system,Segoe UI,sans-serif;background:#1b1b24;color:#eee;padding-bottom:env(safe-area-inset-bottom)}
+header{padding:14px 16px;font-size:22px;font-weight:700;background:#262633;position:sticky;top:0}
+.tabs{display:flex;background:#262633}
+.tabs button{flex:1;padding:12px;background:none;border:0;border-bottom:3px solid transparent;color:#aaa;font-size:14px}
+.tabs button.on{color:#fff;border-color:#e8a33d}
+main{max-width:700px;margin:auto;padding:12px}
+input,textarea{width:100%;padding:12px;font-size:17px;border-radius:10px;border:1px solid #444;background:#2d2d3b;color:#eee;margin:4px 0}
+button.b,label.b{display:inline-block;padding:12px 16px;font-size:14px;border:0;border-radius:10px;background:#e8a33d;color:#111;font-weight:600;margin:4px 4px 4px 0}
+button.d{background:#c0504d;color:#fff}
+.item,.card{padding:14px;background:#2d2d3b;border-radius:10px;margin:8px 0}
+.card h2{margin:0 0 4px}.muted{color:#999}
+.hide{display:none}
+</style></head><body>
+<header>🍸 Bar Bible</header>
+<div class="tabs"><button id="t1" class="on">Search</button><button id="t2">Saved</button><button id="t3">Add</button></div>
+<main>
+<section id="s1"><input id="q" placeholder="Search drinks online (e.g. mojito)" enterkeyhint="search">
+<button class="b" id="go">Search</button><div id="r"></div></section>
+<section id="s2" class="hide"><input id="f" placeholder="Filter by name or ingredient"><div id="l"></div>
+<button class="b" id="exp">Export backup</button>
+<label class="b">Import backup<input type="file" id="imp" accept=".json" class="hide"></label></section>
+<section id="s3" class="hide"><input id="an" placeholder="Name"><input id="ag" placeholder="Glass">
+<textarea id="ai" rows="5" placeholder="Ingredients, one per line"></textarea>
+<textarea id="as" rows="4" placeholder="Instructions"></textarea>
+<button class="b" id="asave">Save drink</button></section>
+<div id="v"></div>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const KEY='barbible.drinks';
+const getSaved=()=>JSON.parse(localStorage.getItem(KEY)||'[]').sort((a,b)=>a.name.localeCompare(b.name));
+const putSaved=l=>localStorage.setItem(KEY,JSON.stringify(l));
+function saveDrink(d){const l=getSaved().filter(x=>x.name.toLowerCase()!=d.name.toLowerCase());l.push(d);putSaved(l)}
+let results=[];
+function tab(n){for(let i=1;i<=3;i++){$('s'+i).classList.toggle('hide',i!=n);$('t'+i).classList.toggle('on',i==n)}$('v').innerHTML='';if(n==2)renderSaved()}
+[1,2,3].forEach(i=>$('t'+i).onclick=()=>tab(i));
+function view(d,isSaved){
+ $('v').innerHTML='<div class="card"><h2>'+esc(d.name)+'</h2><div class="muted">'+esc(d.glass||'')+'</div><ul>'+
+ d.ingredients.map(i=>'<li>'+esc(i)+'</li>').join('')+'</ul><p>'+esc(d.instructions)+'</p>'+
+ (isSaved?'<button class="b d" id="del">Delete</button>':'<button class="b" id="sv">Save drink</button>')+'</div>';
+ if(isSaved)$('del').onclick=()=>{if(confirm('Delete '+d.name+'?')){putSaved(getSaved().filter(x=>x.name!=d.name));$('v').innerHTML='';renderSaved()}};
+ else $('sv').onclick=()=>{saveDrink(d);$('sv').textContent='Saved ✓'};
+ $('v').scrollIntoView({behavior:'smooth'});
+}
+function parse(d){const ings=[];for(let i=1;i<=15;i++){const g=(d['strIngredient'+i]||'').trim();
+ if(g)ings.push(((d['strMeasure'+i]||'').trim()+' '+g).trim())}
+ return{name:d.strDrink,glass:d.strGlass||'',ingredients:ings,instructions:d.strInstructions||''}}
+async function search(){const q=$('q').value.trim();if(!q)return;$('r').innerHTML='<p class="muted">Searching…</p>';
+ try{const r=await fetch('https://www.thecocktaildb.com/api/json/v1/1/search.php?s='+encodeURIComponent(q));
+  results=((await r.json()).drinks||[]).map(parse)}
+ catch(e){$('r').innerHTML='<p>Search failed (are you online?). Saved drinks still work offline.</p>';return}
+ $('r').innerHTML=results.length?results.map((d,i)=>'<div class="item" data-i="'+i+'">'+esc(d.name)+'</div>').join(''):'<p class="muted">No drinks found.</p>';
+ document.querySelectorAll('#r .item').forEach(e=>e.onclick=()=>view(results[e.dataset.i],false))}
+$('go').onclick=search;$('q').onkeydown=e=>{if(e.key=='Enter')search()};
+function renderSaved(){const f=$('f').value.toLowerCase(),saved=getSaved();
+ const list=saved.filter(d=>(d.name+d.ingredients.join(' ')).toLowerCase().includes(f));
+ $('l').innerHTML=list.length?list.map(d=>'<div class="item" data-n="'+esc(d.name)+'">'+esc(d.name)+'</div>').join(''):'<p class="muted">Nothing saved yet.</p>';
+ document.querySelectorAll('#l .item').forEach(e=>e.onclick=()=>view(saved.find(d=>d.name==e.dataset.n),true))}
+$('f').oninput=renderSaved;
+$('asave').onclick=()=>{const name=$('an').value.trim();if(!name){alert('Name is required');return}
+ saveDrink({name,glass:$('ag').value.trim(),ingredients:$('ai').value.split('\n').map(s=>s.trim()).filter(Boolean),instructions:$('as').value.trim()});
+ ['an','ag','ai','as'].forEach(i=>$(i).value='');tab(2)};
+$('exp').onclick=()=>{const a=document.createElement('a');
+ a.href=URL.createObjectURL(new Blob([JSON.stringify(getSaved(),null,2)],{type:'application/json'}));
+ a.download='barbible-backup.json';a.click()};
+$('imp').onchange=async e=>{try{const l=JSON.parse(await e.target.files[0].text());l.forEach(saveDrink);renderSaved();alert('Imported '+l.length+' drinks')}catch(x){alert('Invalid backup file')}};
+</script></body></html>
